@@ -34,13 +34,19 @@ model {
   buyer = actor "Buyer"{
     description 'Покупатель'
   }
-  
+  admin = actor "Admin"{
+    description 'Админ'
+  }
   seller = actor "Seller"{
     description 'Продавец'
   }
   marketplace = system "Marketplace" {
+  
     gateway = container "api-GW"{
-        description 'common start point'
+        description 'proxi'
+    }
+    web_app = container "web application"{
+        description 'start point for users'
     }
     goods = container "goods service"{
         description 'catalog'
@@ -82,9 +88,11 @@ model {
     broker = queue "broker"{
         description 'broker'
     }
-    buyer -> gateway "HTTP"
-    seller -> gateway "HTTP"
 
+    buyer -> web_app "HTTP"
+    seller -> web_app "HTTP"
+    admin -> gateway "HTTP"
+    
     gateway -> goods "HTTP"
     gateway -> feed "HTTP"
     gateway -> user "HTTP"
@@ -97,12 +105,13 @@ model {
     payment -[async]-> broker "PaymentStatusChanged" 
     order -[async]-> broker "OrderCreated" 
     order -[async]-> broker "OrderChanged" 
-    goods -[async]-> broker "ProductChanged"
+    goods -[async]-> broker "ProductTouched"
+    user -[async]-> broker "PersonCreated"
 
     broker -[async]-> order "PaymentStatusChanged" 
     broker -[async]-> notification "OrderCreated, OrderChanged, PaymentStatusChanged" 
-    broker -[async]-> feed "ProductChanged"     
-  
+    broker -[async]-> feed "ProductTouched"     
+    broker -[async]-> feed "PersonCreated"
     
 
     order -> payment "HTTP" 
@@ -221,7 +230,7 @@ views {
   }
 
   // 10) Dynamic view — обновление ленты после изменения товара
-  dynamic view productChangedFlow {
+  dynamic view ProductTouchedFlow {
     title "Flow — Product Changed → Feed Updated"
     include seller
     include gateway
@@ -231,7 +240,7 @@ views {
 
     seller -> gateway "1) POST/PUT/DELETE /goods/saler"
     gateway -> goods "2) HTTP: mutate product"
-    goods -> broker "3) Event: ProductChanged"
+    goods -> broker "3) Event: ProductTouched"
     broker -> feed "4) Consume: update feed cache/index"
   }
 }

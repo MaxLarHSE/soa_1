@@ -11,13 +11,13 @@
 ---
 
 ## Домены и ответственность
-- **Gateway** -единая точка входа, маршрутизация запросов.
-- **Catalog** -товары и управление каталогом продавца.
-- **Feed** -выдача ленты товаров (персонализация упрощена).
-- **Users** -покупатели/продавцы, регистрация/авторизация, профиль.
-- **Orders** -оформление заказов и статусы.
-- **Payments** -учёт платежей и статусов.
-- **Notifications** -уведомления о статусах заказа/оплаты.
+- **Gateway** - единая точка входа, маршрутизация запросов.
+- **Catalog** - товары и управление каталогом продавца.
+- **Feed** - выдача ленты товаров (персонализация упрощена).
+- **Users** - покупатели/продавцы, регистрация/авторизация, профиль.
+- **Orders** - оформление заказов и статусы.
+- **Payments** - учёт платежей и статусов.
+- **Notifications** - уведомления о статусах заказа/оплаты.
 
 ---
 
@@ -37,8 +37,8 @@
 
 ---
 
-### goods-service (`/goods`) -Catalog + Seller tools
-- `GET /goods` -+фильтры 
+### goods-service (`/goods`) - Catalog + Seller tools
+- `GET /goods?filters...` - выдача товаров по фильтрам 
 - `GET /goods/recomendation?id=...` -товары для персонализированной ленты 
 - `/goods/saler`
     - `GET ?id_saler=...`
@@ -47,59 +47,60 @@
     - `DELETE /{id}` -удалить товар
 
 **DB (goods-db):** `products (seller_id, price, ...)`  
-**Events:** публикует `ProductChanged` (создание/изменение/удаление товара).
+**Events:** публикует `ProductTouched` (создание/изменение/удаление товара).
 
 ---
 
-### feed-service (`/feed`) -Feed/Personalization
+### feed-service (`/feed`) - Feed
 - `GET /feed?id=...` -выдача ленты товаров (по user_id)
 
 **DB (feed-db):** id/ кеш предложений  
-**Events:** слушает `ProductChanged` для обновления кэша.
+**Events:** слушает `ProductTouched` для обновления кэша.
 
 ---
 
-### user-service (`/user`) -Users + Auth
+### user-service (`/user`) - Users + Auth
 - `POST /user/register` -создание пользователя
-- `POST /user/login/{id}` -пароль в body → токен (заглушка)
+- `POST /user/login/{id}` -пароль в body
 - `PUT /user/change` -изменить данные
 - `DELETE /user/change` -удалить пользователя
+- публикует `PersonCreated` 
 
 **DB (user-db):** пользователи/профили + `password_hash`
 
 ---
 
-### order-service (`/order`) -Orders
+### order-service (`/order`) - Orders
 - `POST /order/buy`
-    - sync: вызывает `POST /payment/buy`
+    - sync: вызывает `POST /payment/buy` и слушает
     - при успехе создаёт заказ и публикует события `OrderCreated`/`OrderStatusChanged`
 - `GET /order/list?id_user=...` -список заказов
 - `GET /order/list?id_user=...&id=...` -детали заказа
 - `DELETE /order/list?id_user=...&id=...` -удалить/отменить заказ, публикует событие
 
-**DB (order-db):** `orders, order_items, status_history`  
+**DB (order-db):** `orders`  
 **Events:** публикует `OrderCreated`, `OrderStatusChanged`  
 **Events:** слушает `PaymentStatusChanged` и обновляет статус заказа.
 
 ---
 
-### payment-service (`/payment`) -Payments
+### payment-service (`/payment`) - Payments
 - `POST /payment/buy` -создать платёж (body: кто покупает, сумма и т.п.)
-    - публикует `PaymentStatusChanged` (например `PAID/FAILED`, можно заглушкой)
+    - публикует `PaymentStatusChanged` 
 
 **DB (payment-db):** `payments (status, order_id, ...)`  
 **Events:** публикует `PaymentStatusChanged`
 
 ---
 
-### notification-service (`/notification`) -Notifications
+### notification-service (`/notification`) - Notifications
 - `POST /notification/pingAll` -массовое уведомление (admin)
 - `POST /notification/ping/{id}` -отправить/создать уведомление
 - `PUT /notification/ping/{id}` -изменить
 - `DELETE /notification/ping/{id}` -удалить
 
 **DB (notification-db):** `notifications`  
-**Events (consume):** слушает `OrderCreated`, `OrderStatusChanged`, `PaymentStatusChanged`.
+**Events (consume):** слушает `PersonCreated`, `OrderCreated`, `OrderStatusChanged`, `PaymentStatusChanged`.
 
 ---
 ## Границы владения данными и события
@@ -113,8 +114,8 @@
 | goods-service | goods-db | товары (`products`, `seller_id`, `price`)      | управление каталогом и товарами продавцов |
 | feed-service | feed-db | персонализации (`id`, `cache`)                 | формирование персонализированной ленты |
 | user-service | user-db | пользователи (`profiles`, `password_hash`)     | регистрация, авторизация, профиль пользователя |
-| order-service | order-db | заказы (`orders`, `status_history`) | создание заказов и управление статусами |
-| payment-service | payment-db | платежи (`payments`, `status`, `order_id`)     | учёт и статус платежей |
+| order-service | order-db | заказы (`orders`) | создание заказов и управление статусами |
+| payment-service | payment-db | платежи (`payments`)     | учёт и статус платежей |
 | notification-service | notification-db | уведомления (`notifications`)                  | отправка и хранение уведомлений |
 
 Это гарантирует отсутствие shared database и чёткие границы владения данными.
@@ -126,7 +127,7 @@
 - все что не асинхронно
 
 ### Асинхронно (events через Message Broker)
-- goods-service → `ProductChanged` → feed-service
+- goods-service → `ProductTouched` → feed-service
 - order-service → `OrderCreated/OrderStatusChanged` → notification-service
 - payment-service → `PaymentStatusChanged` → order-service, notification-service
 
@@ -135,9 +136,9 @@
 ---
 
 ## Почему выбран такой вариант
-- **Минимальная связность:** уведомления и обновление ленты делаются через события, сервисы не вызывают друг друга напрямую без необходимости.
+- **Минимальная связность:** сервисы не вызывают друг друга напрямую без необходимости.
 - **Ясные границы данных:** каждый сервис владеет своей БД, нет shared DB.
-- **Простая эволюция:** можно усложнять персонализацию и платежи независимо.
+- **Простая эволюция:** развивать компоненты системы независимо.
 
 ---
 
@@ -174,7 +175,7 @@ docker run --rm -p 5173:5173 -p 24678:24678 -v ${PWD}:/workspace -w /workspace l
 
 
 
-## Альтернативные варианты декомпозиции и trade-off’ы (8–10 баллов)
+## Альтернативные варианты декомпозиции и trade-off’ы
 
 ### Вариант A - Монолит (1 сервис + 1 БД)
 **Описание:** один backend-сервис реализует users/goods/feed/orders/payments/notifications, одна общая БД.  
@@ -202,4 +203,5 @@ docker run --rm -p 5173:5173 -p 24678:24678 -v ${PWD}:/workspace -w /workspace l
 **Trade-off:** сложнее эксплуатация <-> лучше масштабируемость и устойчивость.
 
 ### Почему выбран вариант C
-Он напрямую покрывает требования кейса (каталог, лента, пользователи, заказы, платежи, уведомления) и соблюдает ограничение “нет shared DB”. Асинхронные события позволяют не связывать сервисы прямыми вызовами (особенно для уведомлений и обновления ленты), что делает архитектуру более устойчивой и расширяемой без реализации бизнес-логики на данном этапе.
+С точки зрения кейса это самый подходящий вариант (условия задачи - бизнес требования)  
+Он напрямую покрывает требования кейса (каталог, лента, пользователи, заказы, платежи, уведомления) и соблюдает ограничение “нет shared DB”. Асинхронные события позволяют не связывать сервисы прямыми вызовами (особенно для уведомлений и обновления ленты), что делает архитектуру более устойчивой и расширяемой.
