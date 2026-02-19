@@ -1,0 +1,237 @@
+specification {
+  element actor
+{
+    style {
+        shape person 
+    }
+}
+  element system{
+    style {
+        color secondary
+    }
+}
+  element container
+  element database{
+    style {
+        shape storage
+        color green 
+    }
+}
+  element queue{
+    style {
+        shape queue
+        color amber   
+    }
+}
+
+    relationship async{
+        color amber
+        line dotted
+}
+}
+
+model {
+  buyer = actor "Buyer"{
+    description 'Покупатель'
+  }
+  
+  seller = actor "Seller"{
+    description 'Продавец'
+  }
+  marketplace = system "Marketplace" {
+    gateway = container "api-GW"{
+        description 'common start point'
+    }
+    goods = container "goods service"{
+        description 'catalog'
+    }
+    goods_db = database  "goods db"{
+        description 'db for catalog'
+    }
+    feed = container "recomendation service"{
+        description 'recomendation service'
+    }
+    feed_db = database  "recomendation db"{
+        description 'db for recomendation'
+    }
+    user = container "user service"{
+        description 'user service'
+    }
+    user_db = database  "user db"{
+        description 'db for user'
+    }
+    order = container "order service"{
+        description 'order service'
+    }
+    order_db = database  "order db"{
+        description 'db for order'
+    }
+    payment = container "payment service"{
+        description 'payment service'
+    }
+    payment_db = database  "payment db"{
+        description 'db for payment'
+    }
+    notification = container "notification service"{
+        description 'notification service'
+    }
+    notification_db = database  "notification db"{
+        description 'db for notification'
+    }
+
+    broker = queue "broker"{
+        description 'broker'
+    }
+    buyer -> gateway "HTTP"
+    seller -> gateway "HTTP"
+
+    gateway -> goods "HTTP"
+    gateway -> feed "HTTP"
+    gateway -> user "HTTP"
+    gateway -> order "HTTP"
+    gateway -> payment "HTTP"
+    gateway -> notification "HTTP"
+
+    feed -> goods "HTTP"
+    
+    payment -[async]-> broker "PaymentStatusChanged" 
+    order -[async]-> broker "OrderCreated" 
+    order -[async]-> broker "OrderChanged" 
+    goods -[async]-> broker "ProductChanged"
+
+    broker -[async]-> order "PaymentStatusChanged" 
+    broker -[async]-> notification "OrderCreated, OrderChanged, PaymentStatusChanged" 
+    broker -[async]-> feed "ProductChanged"     
+  
+    
+
+    order -> payment "HTTP" 
+
+    goods -> goods_db "Read/Write"
+    feed -> feed_db "Read/Write"
+    user -> user_db "Read/Write"
+    order -> order_db "Read/Write"
+    payment -> payment_db "Read/Write"
+    notification -> notification_db "Read/Write"
+  }
+    
+}
+
+views {
+
+  // 1) Landscape — общий обзор: акторы + система
+  // Показывает Buyer/Seller и систему Marketplace
+  view landscape {
+    title "Marketplace — Landscape"
+    include buyer
+    include seller
+    include marketplace
+  }
+
+  // 2) Containers — контейнерная диаграмма Marketplace (основная для ДЗ)
+  view containers of marketplace {
+    title "Marketplace — Containers"
+    include *
+  }
+
+  // 3) Edge/API view — только граница входа (клиенты → gateway → сервисы)
+  view apiEdge of marketplace {
+    title "Marketplace — API Edge (Clients → Gateway → Services)"
+    include buyer
+    include seller
+    include gateway
+    include goods
+    include feed
+    include user
+    include order
+    include payment
+    include notification
+  }
+
+  // 4) Data Ownership — сервисы и их БД (границы владения данными)
+  view dataOwnership of marketplace {
+    title "Marketplace — Data Ownership (Service → DB)"
+    include goods
+    include goods_db
+    include feed
+    include feed_db
+    include user
+    include user_db
+    include order
+    include order_db
+    include payment
+    include payment_db
+    include notification
+    include notification_db
+  }
+
+  // 5) Async Events — только брокер и события (publish/consume)
+  view asyncEvents of marketplace {
+    title "Marketplace — Async Events (Broker)"
+    include broker
+    include goods
+    include feed
+    include order
+    include payment
+    include notification
+  }
+
+
+  // 7) Orders & Payments scope — оформление заказа и оплата + брокер
+  view checkoutScope of marketplace {
+    title "Checkout — Orders + Payments"
+    include gateway
+    include order
+    include order_db
+    include payment
+    include payment_db
+    include broker
+    include notification
+  }
+
+  // 8) Notifications scope — кто генерит события и как уходят уведомления
+  view notificationsScope of marketplace {
+    title "Notifications — Scope"
+    include notification
+    include notification_db
+    include broker
+    include order
+    include payment
+  }
+
+  // 9) Dynamic view — пошаговый сценарий покупки
+  // Смысл: показать sync HTTP + async события
+  dynamic view buyFlow {
+    title "Flow — Create Order & Payment"
+    include buyer
+    include gateway
+    include order
+    include payment
+    include broker
+    include notification
+
+    // шаги (как story)
+    buyer -> gateway "1) POST /order/buy"
+    gateway -> order "2) HTTP: create order (request)"
+    order -> payment "3) HTTP: POST /payment/buy"
+    payment -> broker "4) Event: PaymentStatusChanged"
+    broker -> order "5) Consume: PaymentStatusChanged (update order status)"
+    order -> broker "6) Event: OrderCreated / OrderChanged"
+    broker -> notification "7) Consume: notify user"
+  }
+
+  // 10) Dynamic view — обновление ленты после изменения товара
+  dynamic view productChangedFlow {
+    title "Flow — Product Changed → Feed Updated"
+    include seller
+    include gateway
+    include goods
+    include broker
+    include feed
+
+    seller -> gateway "1) POST/PUT/DELETE /goods/saler"
+    gateway -> goods "2) HTTP: mutate product"
+    goods -> broker "3) Event: ProductChanged"
+    broker -> feed "4) Consume: update feed cache/index"
+  }
+}
