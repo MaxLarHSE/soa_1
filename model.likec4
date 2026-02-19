@@ -92,7 +92,7 @@ model {
     buyer -> web_app "HTTP"
     seller -> web_app "HTTP"
     admin -> gateway "HTTP"
-    
+    web_app -> gateway "HTTP"
     gateway -> goods "HTTP"
     gateway -> feed "HTTP"
     gateway -> user "HTTP"
@@ -111,8 +111,7 @@ model {
     broker -[async]-> order "PaymentStatusChanged" 
     broker -[async]-> notification "OrderCreated, OrderChanged, PaymentStatusChanged" 
     broker -[async]-> feed "ProductTouched"     
-    broker -[async]-> feed "PersonCreated"
-    
+
 
     order -> payment "HTTP" 
 
